@@ -1,0 +1,7 @@
+{
+  "name": "SNL Logistics - Lagos Global",
+  "description": "Premium shipping calculator from Lagos to the world. Compare SNL discounted rates with standard retail prices and save.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
