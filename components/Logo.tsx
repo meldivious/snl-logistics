@@ -14,24 +14,29 @@ const Logo: React.FC<LogoProps> = ({ className = '', size = 'md' }) => {
     xl: 'h-48'
   };
 
-  // If Logo.tsx and logo.png are both in the components folder,
-  // then the path is simply './logo.png'
+  // Using a cleaner relative path that works better from the root
   const logoPath = './components/logo.png';
 
   return (
-    <img 
-      src={logoPath}
-      alt="SNL Logistics Logo"
-      className={`${dimensions[size]} ${className} w-auto object-contain`}
-      onError={(e) => {
-        const target = e.target as HTMLImageElement;
-        console.warn(`Logo failed to load at: ${target.src}. Trying fallback...`);
-        // Fallback to absolute if relative fails
-        if (!target.src.includes('components')) {
-           target.src = 'components/logo.png';
-        }
-      }}
-    />
+    <div className={`flex items-center gap-2 ${className}`}>
+      <img 
+        src={logoPath}
+        alt="SNL Logistics Logo"
+        className={`${dimensions[size]} w-auto object-contain`}
+        onError={(e) => {
+          const target = e.target as HTMLImageElement;
+          // If the nested path fails, try root-relative
+          if (target.src.includes('components/')) {
+            target.src = 'logo.png';
+          }
+        }}
+      />
+      {size !== 'sm' && (
+        <span className="font-black italic text-black tracking-tighter uppercase leading-none hidden xs:block">
+          <span className="text-[#FF3D00]">SNL</span><br/>LOGISTICS
+        </span>
+      )}
+    </div>
   );
 };
 

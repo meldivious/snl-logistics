@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useParams, useNavigate } from 'react-router-dom';
+import { Routes, Route, useParams, useNavigate, Navigate } from 'react-router-dom';
 import Header from './components/Header.tsx';
 import RateCalculator from './components/RateCalculator.tsx';
 import Logo from './components/Logo.tsx';
@@ -53,7 +54,7 @@ const openExternalTracking = (id: string) => {
   window.open(dhlUrl, '_blank');
 };
 
-// Placeholder Tracking Page Component (Internal UI)
+// Placeholder Tracking Page Component
 const TrackingPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -163,6 +164,10 @@ const HomePage: React.FC = () => {
           <div className="flex flex-col md:flex-row items-stretch justify-center gap-6 w-full max-w-4xl">
              <a 
               href="#calculator" 
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById('calculator')?.scrollIntoView({ behavior: 'smooth' });
+              }}
               className="flex-1 bg-black text-white font-black px-8 py-6 rounded-xl shadow-[8px_8px_0px_0px_rgba(255,61,0,1)] border-4 border-black hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all text-xl italic uppercase tracking-tighter text-center flex items-center justify-center min-h-[80px]"
              >
                Request a quote
@@ -282,6 +287,8 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/track/:id" element={<TrackingPage />} />
+          {/* Catch-all route to prevent blank screen */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 

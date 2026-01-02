@@ -1,17 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Logo from './Logo.tsx';
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
-      // Stash the event so it can be triggered later.
       setDeferredPrompt(e);
     };
 
@@ -22,20 +21,46 @@ const Header: React.FC = () => {
     };
   }, []);
 
+  const scrollToCalculator = () => {
+    const el = document.getElementById('calculator');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleCalculatorClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (location.pathname !== '/') {
+      navigate('/');
+      // Wait for navigation to complete before scrolling
+      setTimeout(scrollToCalculator, 100);
+    } else {
+      scrollToCalculator();
+    }
+  };
+
   const handleInstallClick = async () => {
     if (!deferredPrompt) {
-      // If installation is not available, scroll to calculator as a fallback
-      navigate('/');
-      window.location.hash = 'calculator';
+      // Fallback: Just go to the calculator if not installable
+      if (location.pathname !== '/') {
+        navigate('/');
+        setTimeout(scrollToCalculator, 100);
+      } else {
+        scrollToCalculator();
+      }
       return;
     }
-    // Show the install prompt
-    deferredPrompt.prompt();
-    // Wait for the user to respond to the prompt
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User response to the install prompt: ${outcome}`);
-    // We've used the prompt, and can't use it again
-    setDeferredPrompt(null);
+
+    try {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`User response to the install prompt: ${outcome}`);
+      setDeferredPrompt(null);
+    } catch (err) {
+      console.error("Installation prompt failed:", err);
+      // Fallback on error
+      scrollToCalculator();
+    }
   };
 
   return (
@@ -50,7 +75,7 @@ const Header: React.FC = () => {
         <div className="flex items-center gap-3 md:gap-8">
           <a 
             href="#calculator" 
-            onClick={(e) => { e.preventDefault(); navigate('/'); window.location.hash = 'calculator'; }} 
+            onClick={handleCalculatorClick} 
             className="text-[#FF3D00] hover:underline font-black text-[10px] md:text-[11px] tracking-widest hidden xs:block"
           >
             CALCULATOR
@@ -59,7 +84,7 @@ const Header: React.FC = () => {
             onClick={handleInstallClick}
             className="bg-[#FF3D00] text-white px-4 py-2 md:px-6 md:py-2.5 rounded-xl font-black text-[10px] md:text-xs tracking-widest hover:translate-x-0.5 hover:translate-y-0.5 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] md:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] border-2 border-black active:translate-y-1 active:shadow-none transition-all italic uppercase block"
           >
-            Install App
+            {deferredPrompt ? 'Install App' : 'Get Quote'}
           </button>
         </div>
       </div>
