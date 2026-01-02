@@ -58,11 +58,29 @@
 <body>
     <div id="root"></div>
     <script>
+      // Robust Service Worker registration for sandboxed environments
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('Service Worker registered', reg))
-            .catch(err => console.log('Service Worker registration failed', err));
+          // In some hosted environments, relative paths resolve to the parent origin.
+          // We explicitly use the current window's origin to avoid "origin mismatch" errors.
+          try {
+            const swPath = new URL('sw.js', window.location.href).href;
+            navigator.serviceWorker.register(swPath)
+              .then(reg => {
+                console.log('Service Worker registered successfully:', reg.scope);
+              })
+              .catch(err => {
+                // If the error is an origin mismatch, we log it as a warning and move on.
+                // This is common in iframe-based preview environments.
+                if (err.message && err.message.includes('origin')) {
+                  console.warn('Service Worker registration skipped due to sandbox origin mismatch.');
+                } else {
+                  console.error('Service Worker registration failed:', err);
+                }
+              });
+          } catch (e) {
+            console.error('Error initiating Service Worker registration:', e);
+          }
         });
       }
     </script>

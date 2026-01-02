@@ -158,7 +158,7 @@ const HomePage: React.FC = () => {
           
           <p className="text-lg md:text-2xl text-black font-bold max-w-2xl mx-auto leading-tight italic opacity-90 mb-12">
             International shipping from Lagos to the World. <br className="hidden md:block" />
-            Moving goods one business at a time Express.
+            Moving goods one parcel at a time Expressly.
           </p>
 
           <div className="flex flex-col md:flex-row items-stretch justify-center gap-6 w-full max-w-4xl">
