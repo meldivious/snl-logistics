@@ -1,4 +1,3 @@
-
 import { Country } from './types';
 
 export const SNL_LIME = '#CCFF00';
@@ -118,6 +117,6 @@ export const PER_KG_PRICING = [
 
 export const EXTRA_COSTS = {
   PACKAGING: 2500,
-  PHYTOSANITARY: 4000,
-  VACUUM_SEAL: 500
+  VACUUM_SEAL: 500,
+  INSURANCE: 6000
 };

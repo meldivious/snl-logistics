@@ -3,6 +3,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { COUNTRIES, FIXED_PRICING, PER_KG_PRICING, EXTRA_COSTS } from '../constants';
 import { Country, Quote, Currency } from '../types';
 import { getLogisticsAdvice, lookupPostalCode } from '../services/geminiService';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 type Step = 'calculate' | 'details';
 
@@ -32,19 +34,22 @@ const RateCalculator: React.FC = () => {
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [weight, setWeight] = useState<number>(2.5);
+  const [weight, setWeight] = useState<number>(2.0);
   const [loading, setLoading] = useState<boolean>(false);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [advice, setAdvice] = useState<string>('');
   const [quoteCache, setQuoteCache] = useState<Record<string, CacheEntry>>({});
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [zipLoading, setZipLoading] = useState(false);
+  const [isSharePreviewOpen, setIsSharePreviewOpen] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const snapshotRef = useRef<HTMLDivElement>(null);
   
   const [extras, setExtras] = useState({
     packaging: false,
-    phytosanitary: false,
-    vacuum: false
+    vacuum_seal: false,
+    insurance: false
   });
 
   const initialPersonState: PersonDetails = {
@@ -65,7 +70,18 @@ const RateCalculator: React.FC = () => {
     receiver: {}
   });
 
-  // Close search dropdown on outside click
+  const generationDateTime = useMemo(() => {
+    const now = new Date();
+    return now.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).toUpperCase();
+  }, [isSharePreviewOpen]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -76,7 +92,6 @@ const RateCalculator: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Auto-populate postal code for receiver based on City and State
   useEffect(() => {
     const shouldLookup = receiver.city.length > 2 && receiver.state.length > 2 && receiver.country && !receiver.postalCode;
     
@@ -87,7 +102,6 @@ const RateCalculator: React.FC = () => {
           const zip = await lookupPostalCode(receiver.city, receiver.state, receiver.country);
           if (zip) {
             setReceiver(prev => ({ ...prev, postalCode: zip }));
-            // Clear error if it was there
             setErrors(prev => ({
               ...prev,
               receiver: { ...prev.receiver, postalCode: '' }
@@ -96,7 +110,7 @@ const RateCalculator: React.FC = () => {
         } finally {
           setZipLoading(false);
         }
-      }, 1200); // 1.2s debounce to wait for user to finish typing
+      }, 1200);
       return () => clearTimeout(timer);
     }
   }, [receiver.city, receiver.state, receiver.country]);
@@ -108,44 +122,20 @@ const RateCalculator: React.FC = () => {
     ).slice(0, 10);
   }, [searchTerm]);
 
-  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  
-  const validatePhone = (phone: string, country: string) => {
-    if (country === 'Nigeria') return /^(?:\+234|0)[789][01]\d{8}$/.test(phone.replace(/\s/g, ''));
-    return /^\+?[\d\s-]{8,15}$/.test(phone);
-  };
-
-  const validateZip = (zip: string, country: string) => {
-    const cleanZip = zip.trim();
-    if (!cleanZip && country !== 'Nigeria') return false;
-    if (country === 'United States') return /^\d{5}(-\d{4})?$/.test(cleanZip);
-    if (country === 'United Kingdom') return /^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$/i.test(cleanZip);
-    if (country === 'Canada') return /^[A-Z]\d[A-Z] ?\d[A-Z]\d$/i.test(cleanZip);
-    return cleanZip.length >= 3;
-  };
-
   const validatePerson = (person: PersonDetails, type: 'sender' | 'receiver') => {
     const newErrors: ValidationErrors = {};
     if (!person.fullName || person.fullName.trim().length < 3) 
       newErrors.fullName = "Full name (exactly as on ID) is required";
-    
-    if (!validatePhone(person.phone, person.country)) 
-      newErrors.phone = "Provide a valid phone number for " + person.country;
-    
-    if (!validateEmail(person.email)) 
+    if (!person.phone || person.phone.length < 8)
+      newErrors.phone = "Provide a valid phone number";
+    if (!person.email || !person.email.includes('@')) 
       newErrors.email = "Enter a valid email address";
-    
     if (!person.address || person.address.trim().length < 5) 
-      newErrors.address = "Detailed address is required for pickup/delivery";
-    
-    if (person.country !== 'Nigeria' && !validateZip(person.postalCode, person.country)) 
-      newErrors.postalCode = `Invalid Zip/Postal code format for ${person.country}`;
-    
-    if (!person.city || person.city.trim().length < 2) 
-      newErrors.city = "City is required";
-    
-    if (!person.state || person.state.trim().length < 2) 
-      newErrors.state = "State/Province is required";
+      newErrors.address = "Detailed address is required";
+    if (person.country !== 'Nigeria' && (!person.postalCode || person.postalCode.length < 3)) 
+      newErrors.postalCode = `Invalid Zip/Postal code for ${person.country}`;
+    if (!person.city) newErrors.city = "City is required";
+    if (!person.state) newErrors.state = "State is required";
 
     setErrors(prev => ({ ...prev, [type]: newErrors }));
     return Object.keys(newErrors).length === 0;
@@ -186,8 +176,8 @@ const RateCalculator: React.FC = () => {
 
     let totalExtras = 0;
     if (extras.packaging) totalExtras += EXTRA_COSTS.PACKAGING;
-    if (extras.phytosanitary) totalExtras += EXTRA_COSTS.PHYTOSANITARY;
-    if (extras.vacuum) totalExtras += EXTRA_COSTS.VACUUM_SEAL;
+    if (extras.vacuum_seal) totalExtras += EXTRA_COSTS.VACUUM_SEAL;
+    if (extras.insurance) totalExtras += EXTRA_COSTS.INSURANCE;
 
     const ourPrice = baseRate + totalExtras + serviceFee;
     const dhlPrice = (baseRate * 2.85) + totalExtras + (serviceFee * 1.5);
@@ -214,22 +204,45 @@ const RateCalculator: React.FC = () => {
     setLoading(false);
   };
 
-  const handleShare = async () => {
-    if (!quote) return;
-    const shareText = `SNL Logistics Quote:\nFrom: Lagos, Nigeria\nTo: ${quote.destination.name}\nWeight: ${quote.weight} KG\nYour Price: ₦${quote.ourPrice.toLocaleString()}\nSavings: ₦${quote.savings.toLocaleString()}\n\nBook your shipment at SNL Logistics!`;
+  const handleDownloadAndShare = async () => {
+    if (!quote || !snapshotRef.current) return;
+    
+    setIsCapturing(true);
+    try {
+      const canvas = await html2canvas(snapshotRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#fafafa'
+      });
+      const imgData = canvas.toDataURL('image/png');
 
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'SNL Logistics Quote', text: shareText, url: window.location.href });
-        setShareStatus("Quote Shared!");
-      } catch (err) { setShareStatus("Sharing failed."); }
-    } else {
-      try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [canvas.width / 2, canvas.height / 2]
+      });
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
+      pdf.save(`SNL_Quote_${quote.destination.code}_${quote.weight}KG.pdf`);
+
+      const shareText = `🚀 SNL Logistics Quote:\n🌍 To: ${quote.destination.name}\n⚖️ Weight: ${quote.weight} KG\n💰 SNL Price: ₦${quote.ourPrice.toLocaleString()}\n📉 Savings: ₦${quote.savings.toLocaleString()}\n\nGenerated: ${generationDateTime}\nMoving goods at the speed of business.\nBook at: ${window.location.origin}`;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: 'SNL Logistics Quote', text: shareText, url: window.location.href });
+          setShareStatus("Quote Shared!");
+        } catch (err) { setShareStatus("PDF Downloaded."); }
+      } else {
         await navigator.clipboard.writeText(shareText);
-        setShareStatus("Quote copied to clipboard!");
-      } catch (err) { setShareStatus("Could not copy quote."); }
+        setShareStatus("PDF saved & link copied!");
+      }
+    } catch (error) {
+      console.error("Capture failed:", error);
+      setShareStatus("Export failed.");
+    } finally {
+      setIsCapturing(false);
+      setIsSharePreviewOpen(false);
+      setTimeout(() => setShareStatus(null), 3000);
     }
-    setTimeout(() => setShareStatus(null), 3000);
   };
 
   const handleBookNow = () => {
@@ -241,25 +254,11 @@ const RateCalculator: React.FC = () => {
     }
     
     const whatsappNumber = "2347054638787";
-    const formatPerson = (p: PersonDetails, title: string) => {
-      return `*${title} DETAILS*%0A` +
-        `- Full name: ${p.fullName}%0A` +
-        `- Phone number: ${p.phone}%0A` +
-        `- Email: ${p.email}%0A` +
-        `- Address: ${p.address}%0A` +
-        `- Postal code: ${p.postalCode}%0A` +
-        `- City: ${p.city}%0A` +
-        `- State: ${p.state}%0A` +
-        `- Country: ${p.country}`;
-    };
-
     const text = `*NEW BOOKING REQUEST - SNL LOGISTICS*%0A%0A` +
       `*SHIPMENT SUMMARY*%0A` +
       `- To: ${quote.destination.name}%0A` +
       `- Weight: ${quote.weight} KG%0A` +
-      `- Total Price: ₦${quote.ourPrice.toLocaleString()}%0A%0A` +
-      `${formatPerson(sender, 'SENDER')}%0A%0A` +
-      `${formatPerson(receiver, 'RECEIVER')}`;
+      `- Total Price: ₦${quote.ourPrice.toLocaleString()}`;
     
     window.open(`https://wa.me/${whatsappNumber}?text=${text}`, '_blank');
   };
@@ -305,46 +304,12 @@ const RateCalculator: React.FC = () => {
         {errors[type].address && <span className="text-[10px] text-red-500 font-black uppercase italic mt-1 block">{errors[type].address}</span>}
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <input 
-            type="text" placeholder="City" 
-            className={`w-full border-2 p-4 rounded-lg font-bold outline-[#CCFF00] transition-colors ${errors[type].city ? 'border-red-500 bg-red-50' : 'border-gray-200'}`} 
-            value={data.city}
-            onChange={e => onChange({...data, city: e.target.value})}
-          />
-          {errors[type].city && <span className="text-[10px] text-red-500 font-black uppercase italic mt-1 block">{errors[type].city}</span>}
-        </div>
-        <div>
-          <input 
-            type="text" placeholder="State/Province" 
-            className={`w-full border-2 p-4 rounded-lg font-bold outline-[#CCFF00] transition-colors ${errors[type].state ? 'border-red-500 bg-red-50' : 'border-gray-200'}`} 
-            value={data.state}
-            onChange={e => onChange({...data, state: e.target.value})}
-          />
-          {errors[type].state && <span className="text-[10px] text-red-500 font-black uppercase italic mt-1 block">{errors[type].state}</span>}
-        </div>
+        <input type="text" placeholder="City" className="w-full border-2 p-4 rounded-lg font-bold border-gray-200 outline-[#CCFF00]" value={data.city} onChange={e => onChange({...data, city: e.target.value})}/>
+        <input type="text" placeholder="State/Province" className="w-full border-2 p-4 rounded-lg font-bold border-gray-200 outline-[#CCFF00]" value={data.state} onChange={e => onChange({...data, state: e.target.value})}/>
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="relative">
-          <input 
-            type="text" placeholder="Zip/Postal Code" 
-            className={`w-full border-2 p-4 rounded-lg font-bold outline-[#CCFF00] transition-colors ${errors[type].postalCode ? 'border-red-500 bg-red-50' : 'border-gray-200'} ${zipLoading ? 'animate-pulse' : ''}`} 
-            value={data.postalCode}
-            onChange={e => onChange({...data, postalCode: e.target.value})}
-          />
-          {zipLoading && (
-            <div className="absolute right-3 top-4">
-              <i className="fa-solid fa-spinner fa-spin text-[#FF3D00]"></i>
-            </div>
-          )}
-          {errors[type].postalCode && <span className="text-[10px] text-red-500 font-black uppercase italic mt-1 block">{errors[type].postalCode}</span>}
-        </div>
-        <input 
-          type="text" placeholder="Country" 
-          className="w-full border-2 border-gray-100 p-4 rounded-lg font-bold bg-gray-50 outline-none cursor-not-allowed" 
-          value={data.country}
-          readOnly
-        />
+        <input type="text" placeholder="Zip/Postal Code" className="w-full border-2 p-4 rounded-lg font-bold border-gray-200 outline-[#CCFF00]" value={data.postalCode} onChange={e => onChange({...data, postalCode: e.target.value})}/>
+        <input type="text" placeholder="Country" className="w-full border-2 border-gray-100 p-4 rounded-lg font-bold bg-gray-50 outline-none cursor-not-allowed" value={data.country} readOnly />
       </div>
     </div>
   );
@@ -353,15 +318,10 @@ const RateCalculator: React.FC = () => {
     return (
       <section id="calculator" className="py-12 px-4 max-w-5xl mx-auto">
         <div className="bg-white rounded-xl shadow-2xl overflow-hidden border-t-8 border-[#FF3D00] p-6 md:p-10">
-          <button 
-            onClick={() => setStep('calculate')}
-            className="text-[#FF3D00] font-black text-xs uppercase mb-6 flex items-center gap-2 hover:translate-x-[-4px] transition-transform"
-          >
+          <button onClick={() => setStep('calculate')} className="text-[#FF3D00] font-black text-xs uppercase mb-6 flex items-center gap-2 hover:translate-x-[-4px] transition-transform">
             <i className="fa-solid fa-arrow-left"></i> Back to Quote
           </button>
-          
           <h2 className="text-3xl font-black text-gray-900 italic uppercase mb-8">Shipment Details</h2>
-          
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
             <div>
               <h3 className="text-xl font-black border-b-4 border-[#CCFF00] pb-2 italic uppercase mb-6 text-[#FF3D00]">1. Sender (Lagos Hub)</h3>
@@ -370,16 +330,9 @@ const RateCalculator: React.FC = () => {
             <div>
               <h3 className="text-xl font-black border-b-4 border-[#CCFF00] pb-2 italic uppercase mb-6 text-[#FF3D00]">2. Receiver ({quote?.destination.name})</h3>
               {renderFormFields(receiver, setReceiver, 'receiver')}
-              <p className="text-[9px] font-bold text-gray-400 mt-4 uppercase italic border-l-2 border-[#CCFF00] pl-2">
-                * Just like DHL, we auto-populate the postal code for your destination once City and State are entered.
-              </p>
             </div>
           </div>
-
-          <button 
-            onClick={handleBookNow}
-            className="w-full bg-[#FF3D00] text-white font-black py-5 rounded-xl mt-12 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] border-2 border-black hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all text-2xl italic uppercase active:scale-95"
-          >
+          <button onClick={handleBookNow} className="w-full bg-[#FF3D00] text-white font-black py-5 rounded-xl mt-12 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] border-2 border-black hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all text-2xl italic uppercase active:scale-95">
             <i className="fa-brands fa-whatsapp mr-2 text-3xl align-middle"></i> Book Now via WhatsApp
           </button>
         </div>
@@ -423,16 +376,7 @@ const RateCalculator: React.FC = () => {
                   {isSearchOpen && filteredCountries.length > 0 && (
                     <div className="absolute top-full left-0 right-0 z-50 mt-4 bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] max-h-60 overflow-y-auto">
                       {filteredCountries.map(c => (
-                        <div 
-                          key={c.code}
-                          className="p-4 border-b-2 border-gray-100 hover:bg-[#CCFF00] cursor-pointer font-black italic flex justify-between items-center transition-colors"
-                          onClick={() => {
-                            setSelectedCountry(c);
-                            setSearchTerm(c.name);
-                            setIsSearchOpen(false);
-                            setQuote(null);
-                          }}
-                        >
+                        <div key={c.code} className="p-4 border-b-2 border-gray-100 hover:bg-[#CCFF00] cursor-pointer font-black italic flex justify-between items-center transition-colors" onClick={() => { setSelectedCountry(c); setSearchTerm(c.name); setIsSearchOpen(false); setQuote(null); }}>
                           <span className="uppercase">{c.name}</span>
                           <span className="text-[10px] bg-black text-white px-2 py-1 italic">SELECT</span>
                         </div>
@@ -443,20 +387,10 @@ const RateCalculator: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wide">
-                  Weight: <span className="text-[#FF3D00] text-xl">{weight} KG</span>
-                </label>
+                <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wide">Weight: <span className="text-[#FF3D00] text-xl">{weight} KG</span></label>
                 <div className="flex items-center gap-4">
-                  <input 
-                    type="range" min="0.5" max="40" step="0.5" value={weight}
-                    onChange={(e) => setWeight(parseFloat(e.target.value))}
-                    className="flex-grow h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#FF3D00]"
-                  />
-                  <input 
-                    type="number" value={weight}
-                    onChange={(e) => setWeight(Math.min(40, Math.max(0.5, parseFloat(e.target.value) || 0.5)))}
-                    className="w-20 border-2 border-gray-200 rounded-lg py-2 px-2 text-center font-black outline-[#CCFF00]"
-                  />
+                  <input type="range" min="0.5" max="40" step="0.5" value={weight} onChange={(e) => setWeight(parseFloat(e.target.value))} className="flex-grow h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#FF3D00]"/>
+                  <input type="number" value={weight} onChange={(e) => setWeight(Math.min(40, Math.max(0.5, parseFloat(e.target.value) || 0.5)))} className="w-20 border-2 border-gray-200 rounded-lg py-2 px-2 text-center font-black outline-[#CCFF00]"/>
                 </div>
               </div>
             </div>
@@ -467,18 +401,8 @@ const RateCalculator: React.FC = () => {
                 {Object.entries(EXTRA_COSTS).map(([key, value]) => (
                   <label key={key} className="flex items-center justify-between cursor-pointer group">
                     <div className="flex items-center gap-3">
-                      <input 
-                        type="checkbox" 
-                        checked={extras[key.toLowerCase() as keyof typeof extras]} 
-                        onChange={e => {
-                          setExtras({...extras, [key.toLowerCase()]: e.target.checked});
-                          setQuote(null);
-                        }} 
-                        className="w-5 h-5 accent-[#FF3D00] border-2 border-black" 
-                      />
-                      <span className="text-sm font-black text-gray-600 group-hover:text-black uppercase italic">
-                        {key.replace('_', ' ')}
-                      </span>
+                      <input type="checkbox" checked={extras[key.toLowerCase() as keyof typeof extras]} onChange={e => { setExtras({...extras, [key.toLowerCase()]: e.target.checked}); setQuote(null); }} className="w-5 h-5 accent-[#FF3D00] border-2 border-black" />
+                      <span className="text-sm font-black text-gray-600 group-hover:text-black uppercase italic">{key.replace('_', ' ')}</span>
                     </div>
                     <span className="text-xs font-black text-gray-400">₦{value.toLocaleString()}</span>
                   </label>
@@ -487,11 +411,7 @@ const RateCalculator: React.FC = () => {
             </div>
           </div>
 
-          <button 
-            onClick={calculateRate}
-            disabled={!selectedCountry || loading}
-            className="w-full bg-[#FF3D00] text-white font-black py-5 rounded-xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] border-2 border-black transition-all transform hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] disabled:opacity-50 text-xl tracking-tighter italic uppercase"
-          >
+          <button onClick={calculateRate} disabled={!selectedCountry || loading} className="w-full bg-[#FF3D00] text-white font-black py-5 rounded-xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] border-2 border-black transition-all transform hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] disabled:opacity-50 text-xl tracking-tighter italic uppercase">
             {loading ? <i className="fa-solid fa-sync fa-spin mr-2"></i> : "Get My Rates"}
           </button>
         </div>
@@ -506,9 +426,7 @@ const RateCalculator: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
               <div className="space-y-6">
                 <div className="relative">
-                   <div className="absolute -top-3 -left-3 bg-gray-800 text-white px-3 py-1 font-black text-[10px] italic shadow-sm z-10 uppercase">
-                    Direct Retail Market Price
-                   </div>
+                   <div className="absolute -top-3 -left-3 bg-gray-800 text-white px-3 py-1 font-black text-[10px] italic shadow-sm z-10 uppercase">Direct Retail Market Price</div>
                    <div className="bg-white p-5 rounded-xl border-4 border-black flex justify-between items-center opacity-60">
                       <span className="text-gray-400 font-black text-xs uppercase italic">DHL Original Estimate</span>
                       <span className="text-gray-400 font-black text-2xl line-through decoration-red-400 decoration-2">{Currency.NGN}{quote.dhlPrice.toLocaleString()}</span>
@@ -535,16 +453,10 @@ const RateCalculator: React.FC = () => {
                     <p className="text-sm font-bold text-gray-800 leading-relaxed italic">"{advice}"</p>
                  </div>
                  <div className="flex gap-4 mt-4">
-                    <button 
-                      onClick={() => setStep('details')}
-                      className="flex-1 bg-[#FF3D00] text-white font-black py-4 rounded-xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] border-2 border-black transition-all transform hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] uppercase italic text-lg tracking-widest active:scale-95"
-                    >
+                    <button onClick={() => setStep('details')} className="flex-1 bg-[#FF3D00] text-white font-black py-4 rounded-xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] border-2 border-black transition-all transform hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] uppercase italic text-lg tracking-widest active:scale-95">
                        PROCEED TO BOOKING
                     </button>
-                    <button 
-                      onClick={handleShare}
-                      className="w-16 h-16 bg-white border-4 border-black text-black rounded-xl flex items-center justify-center hover:bg-gray-100 transition-colors shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-0.5 hover:translate-y-0.5"
-                    >
+                    <button onClick={() => setIsSharePreviewOpen(true)} className="w-16 h-16 bg-white border-4 border-black text-black rounded-xl flex items-center justify-center hover:bg-gray-100 transition-colors shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-0.5 hover:translate-y-0.5">
                        <i className="fa-solid fa-share-nodes text-xl"></i>
                     </button>
                  </div>
@@ -553,6 +465,78 @@ const RateCalculator: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Share Snapshot Modal */}
+      {isSharePreviewOpen && quote && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-lg bg-white border-4 border-black shadow-[16px_16px_0px_0px_#FF3D00] overflow-hidden">
+            <div className="bg-black p-4 flex justify-between items-center">
+              <span className="text-white font-black italic uppercase text-xs tracking-[0.3em]">Snapshot Preview</span>
+              <button onClick={() => setIsSharePreviewOpen(false)} className="text-white hover:rotate-90 transition-transform">
+                <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+            </div>
+            
+            <div className="p-8 bg-[#fafafa]">
+              {/* The "Digital Quote Card" UI */}
+              <div ref={snapshotRef} className="bg-white border-4 border-black p-6 relative shadow-[8px_8px_0px_0px_rgba(0,0,0,0.1)]">
+                <div className="absolute top-0 right-0 bg-[#FF3D00] text-white px-3 py-1 font-black italic text-[9px] uppercase">Official Quote</div>
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h3 className="font-black italic text-2xl uppercase tracking-tighter">SNL LOGISTICS</h3>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Phone: 070 5463 8787</p>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Date: {generationDateTime}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-[#CCFF00] border-2 border-black flex items-center justify-center">
+                    <i className="fa-solid fa-plane text-black"></i>
+                  </div>
+                </div>
+
+                <div className="space-y-4 mb-8">
+                  <div className="flex justify-between items-end border-b-2 border-dashed border-gray-200 pb-2">
+                    <span className="text-xs font-black uppercase text-gray-400 italic">Route</span>
+                    <span className="text-lg font-black italic">LAGOS → {quote.destination.name}</span>
+                  </div>
+                  <div className="flex justify-between items-end border-b-2 border-dashed border-gray-200 pb-2">
+                    <span className="text-xs font-black uppercase text-gray-400 italic">Net Weight</span>
+                    <span className="text-lg font-black italic">{quote.weight} KG</span>
+                  </div>
+                  <div className="flex justify-between items-end">
+                    <span className="text-xs font-black uppercase text-gray-400 italic">Verified Savings</span>
+                    <span className="text-lg font-black text-green-600 italic">₦{quote.savings.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#CCFF00] border-4 border-black p-4 text-center">
+                  <p className="text-[10px] font-black uppercase italic mb-1 text-black opacity-50">Total Payable Amount</p>
+                  <h2 className="text-4xl font-black text-black tracking-tighter">₦{quote.ourPrice.toLocaleString()}</h2>
+                </div>
+
+                <div className="mt-6 p-3 bg-gray-50 border-2 border-black rounded-lg text-[11px] font-bold italic leading-tight text-gray-600">
+                   "{advice}"
+                </div>
+              </div>
+              
+              <div className="mt-8 flex flex-col gap-4">
+                <button 
+                  onClick={handleDownloadAndShare}
+                  disabled={isCapturing}
+                  className="w-full bg-[#FF3D00] text-white font-black py-5 border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] uppercase italic tracking-widest hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                >
+                  {isCapturing ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-file-pdf text-xl"></i>}
+                  {isCapturing ? "GENERATING..." : "Download & Share Now"}
+                </button>
+                <button 
+                  onClick={() => setIsSharePreviewOpen(false)}
+                  className="w-full bg-white text-black font-black py-4 border-2 border-black uppercase italic tracking-widest text-xs opacity-50 hover:opacity-100 transition-opacity"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
