@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useParams, useNavigate } from 'react-router-dom';
 import Header from './components/Header.tsx';
@@ -161,25 +160,25 @@ const HomePage: React.FC = () => {
             Moving goods one business at a time Express.
           </p>
 
-          <div className="flex flex-col md:flex-row items-stretch justify-center gap-6 w-full max-w-3xl">
+          <div className="flex flex-col md:flex-row items-stretch justify-center gap-6 w-full max-w-4xl">
              <a 
               href="#calculator" 
-              className="flex-1 bg-black text-white font-black px-8 py-6 rounded-xl shadow-[8px_8px_0px_0px_rgba(255,61,0,1)] border-2 border-black hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all text-xl italic uppercase tracking-tighter text-center flex items-center justify-center"
+              className="flex-1 bg-black text-white font-black px-8 py-6 rounded-xl shadow-[8px_8px_0px_0px_rgba(255,61,0,1)] border-4 border-black hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all text-xl italic uppercase tracking-tighter text-center flex items-center justify-center min-h-[80px]"
              >
                Request a quote
              </a>
 
-             <form onSubmit={handleTrack} className="flex-1 flex flex-col sm:flex-row items-stretch gap-0 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] rounded-xl overflow-hidden bg-white">
+             <form onSubmit={handleTrack} className="flex-1 flex flex-row items-stretch gap-0 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] rounded-xl overflow-hidden bg-white min-h-[80px]">
                 <input 
                   type="text" 
-                  placeholder="ENTER TRACKING ID..."
+                  placeholder="TRACKING ID..."
                   value={trackId}
                   onChange={(e) => setTrackId(e.target.value)}
-                  className="flex-grow px-6 py-4 font-black italic uppercase tracking-widest text-lg outline-none placeholder:text-gray-300"
+                  className="flex-grow px-4 md:px-6 py-4 font-black italic uppercase tracking-widest text-lg outline-none placeholder:text-gray-300 w-full"
                 />
                 <button 
                   type="submit"
-                  className="bg-[#FF3D00] text-white font-black px-8 py-4 text-xl italic uppercase tracking-tighter border-t-4 sm:border-t-0 sm:border-l-4 border-black hover:bg-black transition-colors"
+                  className="bg-[#FF3D00] text-white font-black px-6 md:px-10 py-4 text-xl italic uppercase tracking-tighter border-l-4 border-black hover:bg-black transition-colors whitespace-nowrap"
                 >
                   Track
                 </button>
@@ -245,7 +244,7 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* FAQ Section */}
-      <section className="bg-[#f0f0f0] py-24 px-6 border-y-8 border-black">
+      <section className="bg-[rgb(255,252,218)] py-24 px-6 border-y-8 border-black">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-5xl font-black text-black italic uppercase tracking-tighter leading-none mb-4">
