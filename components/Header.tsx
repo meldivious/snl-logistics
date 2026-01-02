@@ -14,10 +14,16 @@ const Header: React.FC = () => {
       setDeferredPrompt(e);
     };
 
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
@@ -41,7 +47,7 @@ const Header: React.FC = () => {
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) {
-      // Fallback: Just go to the calculator if not installable
+      // Fallback: Just go to the calculator if not installable or already installed
       if (location.pathname !== '/') {
         navigate('/');
         setTimeout(scrollToCalculator, 100);
@@ -84,7 +90,7 @@ const Header: React.FC = () => {
             onClick={handleInstallClick}
             className="bg-[#FF3D00] text-white px-4 py-2 md:px-6 md:py-2.5 rounded-xl font-black text-[10px] md:text-xs tracking-widest hover:translate-x-0.5 hover:translate-y-0.5 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] md:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] border-2 border-black active:translate-y-1 active:shadow-none transition-all italic uppercase block"
           >
-            {deferredPrompt ? 'Install App' : 'Get Quote'}
+            {deferredPrompt ? 'Install app' : 'Get a quote'}
           </button>
         </div>
       </div>

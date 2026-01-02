@@ -5,6 +5,70 @@ import Header from './components/Header.tsx';
 import RateCalculator from './components/RateCalculator.tsx';
 import Logo from './components/Logo.tsx';
 
+// PWA Reload Prompt Component
+const ReloadPrompt: React.FC = () => {
+  const [needRefresh, setNeedRefresh] = useState(false);
+  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      // Robust check for service worker registration to handle sandboxed origin issues
+      navigator.serviceWorker.getRegistration()
+        .then(reg => {
+          if (reg) {
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              if (newWorker) {
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    setNeedRefresh(true);
+                    setRegistration(reg);
+                  }
+                });
+              }
+            });
+          }
+        })
+        .catch(err => {
+          console.debug('Service Worker registration access blocked or failed:', err.message);
+        });
+    }
+  }, []);
+
+  const updateServiceWorker = () => {
+    if (registration && registration.waiting) {
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+    setNeedRefresh(false);
+    window.location.reload();
+  };
+
+  if (!needRefresh) return null;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-[300] animate-bounce-slow">
+      <div className="bg-black text-white p-6 border-4 border-[#CCFF00] shadow-[8px_8px_0px_0px_#FF3D00] max-w-sm">
+        <h4 className="font-black italic uppercase text-lg tracking-tighter mb-2">New Update Available</h4>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">We've updated our shipping rates and features for a better experience.</p>
+        <div className="flex gap-3">
+          <button 
+            onClick={updateServiceWorker}
+            className="flex-grow bg-[#FF3D00] text-white font-black py-3 px-4 italic uppercase text-xs tracking-widest border-2 border-black shadow-[4px_4px_0px_0px_rgba(204,255,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all"
+          >
+            Update Now
+          </button>
+          <button 
+            onClick={() => setNeedRefresh(false)}
+            className="bg-white text-black font-black py-3 px-6 italic uppercase text-xs tracking-widest border-2 border-black"
+          >
+            Later
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Modal Component
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
@@ -54,7 +118,6 @@ const openExternalTracking = (id: string) => {
   window.open(dhlUrl, '_blank');
 };
 
-// Placeholder Tracking Page Component
 const TrackingPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -287,7 +350,6 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/track/:id" element={<TrackingPage />} />
-          {/* Catch-all route to prevent blank screen */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -332,6 +394,9 @@ const App: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* PWA Update Prompt */}
+      <ReloadPrompt />
 
       {/* Privacy Modal */}
       <Modal 
